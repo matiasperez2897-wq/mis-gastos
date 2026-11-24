@@ -340,7 +340,7 @@ const PRESETS = [
 ];
 const TIPO_CTA = {liquido:"Disponible", credito:"Tarjeta de crédito", usd:"Ahorro en dólares", empresa:"Tarjeta de Coresa (no es tu plata)", terceros:"Factura de terceros (no es tu plata)"};
 
-const APP_VER = "v21"; // subir junto con el cache de sw.js
+const APP_VER = "v22"; // subir junto con el cache de sw.js
 const S = { flt:{cat:"",tipo:"",desde:"",hasta:"",min:"",max:""}, fltOpen:false, vista:"mes", anio:Number(ym(hoy()).slice(0,4)), pickY:null, dolar:null, user:undefined, authErr:"", authOk:"", lEmail:"", db:null, cfg:null, cfgLoaded:false, movs:[], movsLoaded:false, err:"", tab:"inicio", mes:ym(hoy()), q:"", fCta:"", sheet:null, f:null, confirmDel:false, saving:false, vsel:[] };
 
 /* ---------- cálculos ---------- */
@@ -387,7 +387,7 @@ function resumenMes(m){
   const gastos = ms.filter(x => x.tipo === "gasto" && !ajeno(x));
   const ingresos = ms.filter(x => x.tipo === "ingreso");
   const sum = a => a.reduce((s,x) => s + pes(x), 0);
-  const pend = fijos().filter(f => !pagadoFijo(f, m));
+  const pend = S.cfg?.fijosDesde && m < S.cfg.fijosDesde ? [] : fijos().filter(f => !pagadoFijo(f, m));
   return { gastos, ingresos, totG: sum(gastos), totI: sum(ingresos), pend, totPend: pend.reduce((s,f) => s + fijoPes(f, m), 0) };
 }
 
@@ -1036,15 +1036,16 @@ function ajustesHTML(){
     <input type="file" id="imp" accept=".json,application/json" hidden>
     <span class="hint">El respaldo es un archivo con todas tus cuentas y movimientos. Al importarlo se suma a lo que ya tenés.</span></div>
   <div class="fld"><span class="lb">Empezar de cero</span>
-  ${(() => { const m = S.resetMes || addM(ym(hoy()), 1), keep = x => x.mes >= m || (x.tipo === "gasto" && x.viatico && !x.reintegrado), borra = S.movs.filter(x => !keep(x)).length, quedan = S.movs.length - borra;
+  ${(() => { const m = S.resetMes || ym(hoy()), fd = S.resetFij || addM(ym(hoy()), 1), n = S.movs.length;
     return S.resetConf ? `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px;border-color:var(--neg)">
-      <b>¿Seguro? Se van a borrar ${borra} ${borra===1?"movimiento":"movimientos"} anteriores a ${esc(mesNombre(m).toLowerCase())}.</b>
-      <span class="hint">Primero se descarga un respaldo con todo, por si lo necesitás. Se conservan ${quedan} (viáticos que Coresa todavía no te pagó y lo que ya corresponde a ${esc(mesNombre(m).toLowerCase())} en adelante, como cuotas). Tus cuentas, gastos fijos y presupuestos no se tocan.</span>
-      <button class="btn danger" data-act="resetTodo" ${S.saving?"disabled":""}>${S.saving ? "Borrando…" : "Sí, descargar respaldo y borrar"}</button>
+      <b>¿Seguro? Se van a borrar los ${n} ${n===1?"movimiento":"movimientos"}, todos, incluidos viáticos y cuotas.</b>
+      <span class="hint">Primero se descarga un respaldo con todo. Todas las cuentas quedan en $ 0 y la tarjeta sin deuda. Vas a poder cargar gastos desde ${esc(mesNombre(m).toLowerCase())} y los gastos fijos empiezan a aparecer en ${esc(mesNombre(fd).toLowerCase())}. Tus cuentas (nombres), gastos fijos y presupuestos quedan configurados.</span>
+      <button class="btn danger" data-act="resetTodo" ${S.saving?"disabled":""}>${S.saving ? "Borrando…" : "Sí, descargar respaldo y borrar todo"}</button>
       <button class="btn sec2" data-act="resetCancel">Cancelar</button></div>` :
     `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
-      <div class="fld"><label for="r-mes">La app empieza a contar desde</label><input class="inp" type="month" id="r-mes" value="${esc(m)}"></div>
-      <span class="hint">Borra los movimientos anteriores a ese mes y arranca de nuevo. Después cargá el saldo de cada cuenta al comienzo de ese mes, arriba en "Cuentas y saldo inicial".</span>
+      <div class="two"><div class="fld"><label for="r-mes">Cargás gastos desde</label><input class="inp" type="month" id="r-mes" value="${esc(m)}"></div>
+      <div class="fld"><label for="r-fij">Los fijos empiezan en</label><input class="inp" type="month" id="r-fij" value="${esc(fd)}"></div></div>
+      <span class="hint">Deja la app como recién creada: borra todos los movimientos y pone todas las cuentas en $ 0, sin deudas ni saldo a favor. Mantiene la configuración de cuentas, gastos fijos y presupuestos.</span>
       <button class="btn sec2" data-act="resetAsk">Empezar de cero…</button></div>`; })()}</div>
   <div class="fld"><span class="lb">Cuenta</span><span class="hint">${esc(S.user?.email||"")} · Versión de la app: ${APP_VER}</span><button class="btn danger" data-act="logout">Cerrar sesión</button></div>`;
 }
@@ -1168,7 +1169,7 @@ document.addEventListener("click", async e => {
       try { await S.dl.save({ filename:`viaticos-coresa-${hoy()}.csv`, data: viatCSV(vp) }); toast("Archivo guardado"); }
       catch (err) { if (err?.code !== "declined") toast(err?.code === "rate_limited" ? "Esperá un momento y probá de nuevo" : "No se pudo descargar en esta vista"); }
       break; }
-    case "ajustes": if (!S.cfg) break; S.resetConf = false; S.resetMes = null; S.f = JSON.parse(JSON.stringify(S.cfg)); S.sheet = "ajustes"; renderSheet(); break;
+    case "ajustes": if (!S.cfg) break; S.resetConf = false; S.resetMes = S.resetFij = null; S.f = JSON.parse(JSON.stringify(S.cfg)); S.sheet = "ajustes"; renderSheet(); break;
     case "addCta": { const t = $("#a-tipo").value; S.f.cuentas.push({ id:"c" + Date.now().toString(36), n:"Nueva cuenta", tipo:t, saldo:0 }); renderSheet(); break; }
     case "addFijo": S.f.fijos.push({ id:"f" + Date.now().toString(36), n:"", est:0, cuenta: defCta(), cat:"otros", tipo:"gasto" }); renderSheet(); break;
     case "delFijo": S.f.fijos.splice(Number(v),1); renderSheet(); break;
@@ -1178,21 +1179,24 @@ document.addEventListener("click", async e => {
       break; }
     case "login": case "signup": case "resetPass": authAction(a); break;
     case "logout": closeSheet(); await firebase.auth().signOut(); break;
-    case "resetAsk": { syncAjustes(); const v2 = $("#r-mes")?.value; S.resetMes = /^\d{4}-\d{2}$/.test(v2||"") ? v2 : addM(ym(hoy()), 1); S.resetConf = true; renderSheet(); break; }
+    case "resetAsk": { syncAjustes(); const okM = v2 => /^\d{4}-\d{2}$/.test(v2||"");
+      const a = $("#r-mes")?.value, b2 = $("#r-fij")?.value;
+      S.resetMes = okM(a) ? a : ym(hoy()); S.resetFij = okM(b2) ? b2 : addM(ym(hoy()), 1); S.resetConf = true; renderSheet(); break; }
     case "resetCancel": S.resetConf = false; renderSheet(); break;
-    case "resetTodo": { if (S.saving) break; const m = S.resetMes || addM(ym(hoy()), 1);
-      const keep = x => x.mes >= m || (x.tipo === "gasto" && x.viatico && !x.reintegrado);
-      const ids = S.movs.filter(x => !keep(x)).map(x => x.id);
+    case "resetTodo": { if (S.saving) break; const m = S.resetMes || ym(hoy()), fd = S.resetFij || addM(ym(hoy()), 1);
+      const ids = S.movs.map(x => x.id);
       bajar(`mis-gastos-respaldo-antes-de-borrar-${hoy()}.json`, JSON.stringify({ version:1, config:S.cfg, movs:S.movs }, null, 1), "application/json");
       S.saving = true; renderSheet();
       try {
         for (let i = 0; i < ids.length; i += 400){ const b = S.fs.batch(); ids.slice(i, i+400).forEach(id => b.delete(S.db.doc("movs/" + id))); await b.commit(); }
         syncAjustes();
-        const cfg = { ...S.cfg, inicio: m, fijosOk: {}, cuentas: S.f?.cuentas || S.cfg.cuentas };
+        const cuentas = (S.f?.cuentas || S.cfg.cuentas).map(c => ({ ...c, saldo:0 }));
+        const cierres = Object.fromEntries(Object.entries(S.cfg.cierres || {}).map(([k, v]) => { const { tc, tcAuto, ...resto } = v || {}; return [k, resto]; }));
+        const cfg = { ...S.cfg, inicio: m, fijosDesde: fd, fijosOk: {}, cierres, cuentas };
         await S.db.doc("config/main").set(cfg);
-        S.saving = false; S.resetConf = false; S.resetMes = null; S.mes = m; S.f = JSON.parse(JSON.stringify({ ...cfg, fijos: cfg.fijos || [] }));
-        renderSheet(); render(); toast(`Listo: ${ids.length} movimientos borrados. Ahora cargá los saldos de ${mesNombre(m).toLowerCase()}.`);
-        setTimeout(() => $("#a-s-0")?.focus(), 100);
+        S.saving = false; S.resetConf = false; S.resetMes = S.resetFij = null; S.mes = ym(hoy());
+        S.f = JSON.parse(JSON.stringify({ ...cfg, fijos: cfg.fijos || [] }));
+        renderSheet(); render(); toast(`Listo: la app quedó en cero. ${ids.length} movimientos borrados.`);
       } catch(e){ S.saving = false; renderSheet(); toast(errMsg(e)); }
       break; }
     case "exportar": bajar(`mis-gastos-respaldo-${hoy()}.json`, JSON.stringify({ version:1, config:S.cfg, movs:S.movs }, null, 1), "application/json"); toast("Respaldo descargado"); break;
